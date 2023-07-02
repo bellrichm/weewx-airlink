@@ -490,25 +490,41 @@ class AQI(weewx.xtypes.XType):
     def __init__(self):
         pass
 
+    aqi_fields = {
+        "pm2_5_aqi": "pm2_5",
+        "pm2_51_aqi": "pm2_51",
+        "pm2_52_aqi": "pm2_52",
+        "pm2_53_aqi": "pm2_53",
+        "pm2_54_aqi": "pm2_54",
+    }
+    
+    aqi_color_fields = {
+        "pm2_5_aqi_color": "pm2_5",
+        "pm2_51_aqi_color": "pm2_51",
+        "pm2_52_aqi_color": "pm2_52",
+        "pm2_53_aqi_color": "pm2_53",
+        "pm2_54_aqi_color": "pm2_54",
+    }
+
     agg_sql_dict = {
-        'avg': "SELECT AVG(pm2_5), usUnits FROM %(table_name)s "
-               "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND pm2_5 IS NOT NULL",
+        'avg': "SELECT AVG(%(pm2_5)s), usUnits FROM %(table_name)s "
+               "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND %(pm2_5)s IS NOT NULL",
         'count': "SELECT COUNT(dateTime), usUnits FROM %(table_name)s "
-                 "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND pm2_5 IS NOT NULL",
-        'first': "SELECT pm2_5, usUnits FROM %(table_name)s "
+                 "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND %(pm2_5)s IS NOT NULL",
+        'first': "SELECT %(pm2_5)s, usUnits FROM %(table_name)s "
                  "WHERE dateTime = (SELECT MIN(dateTime) FROM %(table_name)s "
-                 "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND pm2_5 IS NOT NULL",
-        'last': "SELECT pm2_5, usUnits FROM %(table_name)s "
+                 "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND %(pm2_5)s IS NOT NULL",
+        'last': "SELECT %(pm2_5)s, usUnits FROM %(table_name)s "
                 "WHERE dateTime = (SELECT MAX(dateTime) FROM %(table_name)s "
-                "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND pm2_5 IS NOT NULL",
-        'min': "SELECT pm2_5, usUnits FROM %(table_name)s "
-               "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND pm2_5 IS NOT NULL "
-               "ORDER BY pm2_5 ASC LIMIT 1;",
-        'max': "SELECT pm2_5, usUnits FROM %(table_name)s "
-               "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND pm2_5 IS NOT NULL "
-               "ORDER BY pm2_5 DESC LIMIT 1;",
-        'sum': "SELECT SUM(pm2_5), usUnits FROM %(table_name)s "
-               "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND pm2_5 IS NOT NULL)",
+                "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND %(pm2_5)s IS NOT NULL",
+        'min': "SELECT %(pm2_5)s, usUnits FROM %(table_name)s "
+               "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND %(pm2_5)s IS NOT NULL "
+               "ORDER BY %(pm2_5)s ASC LIMIT 1;",
+        'max': "SELECT %(pm2_5)s, usUnits FROM %(table_name)s "
+               "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND %(pm2_5)s IS NOT NULL "
+               "ORDER BY %(pm2_5)s DESC LIMIT 1;",
+        'sum': "SELECT SUM(%(pm2_5)s), usUnits FROM %(table_name)s "
+               "WHERE dateTime > %(start)s AND dateTime <= %(stop)s AND %(pm2_5)s IS NOT NULL)",
     }
 
     @staticmethod
@@ -567,19 +583,24 @@ class AQI(weewx.xtypes.XType):
     @staticmethod
     def get_scalar(obs_type, record, db_manager=None):
         log.debug('get_scalar(%s)' % obs_type)
-        if obs_type not in [ 'pm2_5_aqi', 'pm2_5_aqi_color' ]:
+        if obs_type not in AQI.aqi_fields and obs_type not in AQI.aqi_color_fields:
             raise weewx.UnknownType(obs_type)
         log.debug('get_scalar(%s)' % obs_type)
         if record is None:
             log.debug('get_scalar called where record is None.')
             raise weewx.CannotCalculate(obs_type)
-        if 'pm2_5' not in record:
+        
+        if obs_type in AQI.aqi_fields:
+            dependent_field = AQI.aqi_fields[obs_type]
+        if obs_type in AQI.aqi_color_fields:
+            dependent_field = AQI.aqi_color_fields[obs_type]
+        if dependent_field not in record:
             # Should not see this as pm2_5 is part of the extended schema that is required for this plugin.
             # Returning CannotCalculate causes exception in ImageGenerator, return UnknownType instead.
             # ERROR weewx.reportengine: Caught unrecoverable exception in generator 'weewx.imagegenerator.ImageGenerator'
             log.info('get_scalar called where record does not contain pm2_5.  This is unexpected.')
             raise weewx.UnknownType(obs_type)
-        if record['pm2_5'] is None:
+        if record[dependent_field] is None:
             # Returning CannotCalculate causes exception in ImageGenerator, return UnknownType instead.
             # ERROR weewx.reportengine: Caught unrecoverable exception in generator 'weewx.imagegenerator.ImageGenerator'
             # Any archive catchup records will have None for pm2_5.
@@ -587,10 +608,10 @@ class AQI(weewx.xtypes.XType):
                 timestamp_to_string(record['dateTime']))
             raise weewx.UnknownType(obs_type)
         try:
-            pm2_5 = record['pm2_5']
-            if obs_type == 'pm2_5_aqi':
+            pm2_5 = record[dependent_field]
+            if obs_type in AQI.aqi_fields:
                 value = AQI.compute_pm2_5_aqi(pm2_5)
-            if obs_type == 'pm2_5_aqi_color':
+            if obs_type in AQI.aqi_color_fields:
                 value = AQI.compute_pm2_5_aqi_color(AQI.compute_pm2_5_aqi(pm2_5))
             t, g = weewx.units.getStandardUnitType(record['usUnits'], obs_type)
             # Form the ValueTuple and return it:
@@ -604,8 +625,13 @@ class AQI(weewx.xtypes.XType):
         """Get a series, possibly with aggregation.
         """
 
-        if obs_type not in [ 'pm2_5_aqi', 'pm2_5_aqi_color' ]:
+        if obs_type not in AQI.aqi_fields and obs_type not in AQI.aqi_color_fields:
             raise weewx.UnknownType(obs_type)
+
+        if obs_type in AQI.aqi_fields:
+            dependent_field = AQI.aqi_fields[obs_type]
+        if obs_type in AQI.aqi_color_fields:
+            dependent_field = AQI.aqi_color_fields[obs_type]
 
         log.debug('get_series(%s, %s, %s, aggregate:%s, aggregate_interval:%s)' % (
             obs_type, timestamp_to_string(timespan.start), timestamp_to_string(
@@ -623,9 +649,9 @@ class AQI(weewx.xtypes.XType):
                                            aggregate_interval)
         else:
             # No aggregation.
-            sql_str = 'SELECT dateTime, usUnits, `interval`, pm2_5 FROM %s ' \
-                      'WHERE dateTime >= ? AND dateTime <= ? AND pm2_5 IS NOT NULL' \
-                      % db_manager.table_name
+            sql_str = 'SELECT dateTime, usUnits, `interval`, %s FROM %s ' \
+                      'WHERE dateTime >= ? AND dateTime <= ? AND %s IS NOT NULL' \
+                      % (dependent_field, db_manager.table_name, dependent_field)
             std_unit_system = None
 
             for record in db_manager.genSql(sql_str, timespan):
@@ -637,9 +663,9 @@ class AQI(weewx.xtypes.XType):
                 else:
                     std_unit_system = unit_system
 
-                if obs_type == 'pm2_5_aqi':
+                if obs_type in AQI.aqi_fields:
                     value = AQI.compute_pm2_5_aqi(pm2_5)
-                if obs_type == 'pm2_5_aqi_color':
+                if obs_type in AQI.aqi_color_fields:
                     value = AQI.compute_pm2_5_aqi_color(AQI.compute_pm2_5_aqi(pm2_5))
                 log.debug('get_series(%s): %s - %s - %s' % (obs_type,
                     timestamp_to_string(ts - interval * 60),
@@ -675,8 +701,13 @@ class AQI(weewx.xtypes.XType):
 
         returns: A ValueTuple containing the result.
         """
-        if obs_type not in [ 'pm2_5_aqi', 'pm2_5_aqi_color' ]:
+        if obs_type not in AQI.aqi_fields and obs_type not in AQI.aqi_color_fields:
             raise weewx.UnknownType(obs_type)
+
+        if obs_type in AQI.aqi_fields:
+            dependent_field = AQI.aqi_fields[obs_type]
+        if obs_type in AQI.aqi_color_fields:
+            dependent_field = AQI.aqi_color_fields[obs_type]
 
         log.debug('get_aggregate(%s, %s, %s, aggregate:%s)' % (
             obs_type, timestamp_to_string(timespan.start),
@@ -692,7 +723,8 @@ class AQI(weewx.xtypes.XType):
         interpolation_dict = {
             'start': timespan.start,
             'stop': timespan.stop,
-            'table_name': db_manager.table_name
+            'table_name': db_manager.table_name,
+            'pm2_5': dependent_field
         }
 
         select_stmt = AQI.agg_sql_dict[aggregate_type] % interpolation_dict
@@ -704,9 +736,9 @@ class AQI(weewx.xtypes.XType):
             std_unit_system = None
 
         if value is not None:
-            if obs_type == 'pm2_5_aqi':
+            if obs_type in AQI.aqi_fields:
                 value = AQI.compute_pm2_5_aqi(value)
-            if obs_type == 'pm2_5_aqi_color':
+            if obs_type in AQI.aqi_color_fields:
                 value = AQI.compute_pm2_5_aqi_color(AQI.compute_pm2_5_aqi(value))
         t, g = weewx.units.getStandardUnitType(std_unit_system, obs_type, aggregate_type)
         # Form the ValueTuple and return it:
