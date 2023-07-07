@@ -1,4 +1,10 @@
 # weewx-airlink
+
+This fork is deprecated.
+If you were using the ability to calculate AQI for multiple sensors, check out https://github.com/bellrichm/weewx-aqi-xtype
+
+Otherwise you should use, https://github.com/chaunceygardiner/weewx-airlink
+
 *Open source plugin for WeeWX software.
 
 ## Description
